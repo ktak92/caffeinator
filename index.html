@@ -1,0 +1,185 @@
+<html ng-app="caffeinator">
+
+<head>
+    <title>Caffeinator</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+
+<body>
+    <div class="container" ng-controller="appCtrl">
+        <div class="slot-panel">
+            <div class="reels">
+                <div class="maker-reel reel">
+                    <div class="reel-item item-1">Coffee Maker</div>
+                    <div class="reel-item item-2">Tea Pot</div>
+                    <div class="reel-item item-3">Espresso Machine</div>
+                </div>
+                <div class="filter-reel reel">
+                    <div class="reel-item item-1">Coffee Filter</div>
+                    <div class="reel-item item-2">Tea Strainer</div>
+                    <div class="reel-item item-3">Espresso Tamper</div>
+                </div>
+                <div class="source-reel reel">
+                    <div class="reel-item item-1">Coffee Grounds</div>
+                    <div class="reel-item item-2">Loose Tea</div>
+                    <div class="reel-item item-3">Espresso Beans</div>
+                </div>
+            </div>
+            <div class="controls" ng-hide="complete || spinLocked">
+                <button class="btn" ng-click="start()">Spin for a drink!</button>
+                <button class="btn" ng-click="makeNow()">Drink Now!</button>
+            </div>
+            <!-- <div class="filter-reel"></div>
+            <div class="source-reel"></div> -->
+        </div>
+        <div class="complete-panel" ng-cloak ng-show="complete" ng-class="{'show-complete': complete}">
+            <div class="complete-text">
+                {{finish.text}}
+            </div>
+            <div class="img-container">
+                <img ng-src="images/{{finish.img}}" />
+            </div>
+            <div class="retry-controls">
+                <button class="btn" ng-click="start()">Spin for a drink!</button>
+                <button class="btn" ng-click="makeNow()">Make Now!</button>
+            </div>
+        </div>
+    </div>
+    <script type="text/javascript" src="lib/angular.js"></script>
+    <script type="text/javascript" src="lib/angular-animate.min.js"></script>
+    <script type="text/javascript" src="lib/jquery.js"></script>
+    <script>
+    (function() {
+        angular.module('caffeinator', ['ngAnimate'])
+            .controller('appCtrl', ['$scope', '$q', '$interpolate', '$timeout', appCtrl]);
+
+
+        var _$q; // utilize promises outside of angular
+        function appCtrl($scope, $q, $interpolate, $timeout) {
+            _$q = $q;
+            var reels = [];
+            var failedText = 'You are still sleepy. Let\'s try this again.';
+            var successText = 'You deserve this. Enjoy your {{drink}}.';
+            $scope.spinLocked = false;
+            var drinks = ['coffee', 'espresso', 'tea'];
+            addReels();
+
+            /**
+             * functions
+             */
+            $scope.start = function(forceNum) {
+                if ($scope.spinLocked) {
+                    return false;
+                }
+                $scope.complete = false;
+                $scope.spinLocked = true;
+                $q.all(reels.map(function(reel) {
+                        return reel.spin(forceNum);
+                    }))
+                    .then(checkReels);
+            }
+
+
+            $scope.makeNow = function() {
+                var drinkNum = randomInt(0, 2);
+                console.log('makenow', drinkNum)
+                $scope.start(drinkNum);
+            }
+
+            function addReels() {
+                reels.push(new Reel('maker-reel'));
+                reels.push(new Reel('filter-reel'));
+                reels.push(new Reel('source-reel'));
+            }
+
+            /** checkReels if reels matched */
+            function checkReels(selectedArr) {
+                var drinkNum = selectedArr[0];
+                var allMatched = selectedArr.every(function(item) {
+                    return item === drinkNum;
+                });
+                if (allMatched) {
+                    console.log(drinkNum, drinks)
+                    var drink = drinks[drinkNum];
+                    $scope.finish = {
+                        text: $interpolate(successText)({
+                            drink: drink
+                        }),
+                        img: drink + '.svg'
+                    };
+                } else {
+                    $scope.finish = {
+                        text: failedText,
+                        img: 'failed.svg'
+                    };
+                }
+                $scope.spinLocked = false;
+                $scope.complete = true;
+
+                console.log('done', selectedArr)
+            }
+        }
+
+
+
+        /** Reel class for one of the reels */
+        function Reel(elemClass) {
+            this.reelElem = $('.' + elemClass);
+            this.selectedNum = null;
+            this.animation = {
+                currentDeg: 0,
+                minRotation: 720,
+                ease: 'ease-in-out',
+                delay: randomInt(0, 1) + 's',
+                duration: randomInt(2, 4) + 's'
+            };
+            this.setupReel();
+        }
+
+        Reel.prototype.setDegree = function(degree) {
+            this.reelElem.css({
+                'transform': 'rotateX(' + degree + 'deg)'
+            });
+        }
+
+        Reel.prototype.setupReel = function() {
+            var self = this;
+            /** set transition properties */
+            this.reelElem.css({
+                'transition': 'all ' + this.animation.duration + ' ' + this.animation.ease + ' ' + this.animation.delay
+            });
+
+            /** set event listener for Reel */
+            this.reelElem.on('webkitTransitionEnd transitionend', function(e) {
+                if (self.deferred) {
+                    self.deferred.resolve(self.selectedNum);
+                }
+            });
+        }
+
+        /**
+         * spin starts animation and chooses an item
+         * @return promise that gets resolved when animation ends
+         */
+        Reel.prototype.spin = function(forceNum) {
+            this.deferred = _$q.defer();
+            this.selectedNum = typeof forceNum !== 'undefined' ? forceNum : randomInt(0, 2);
+            //normalize
+            if (this.animation.currentDeg) {
+                this.animation.currentDeg += 360 - (this.animation.currentDeg % 360);
+            }
+            this.animation.currentDeg = this.animation.currentDeg + this.animation.minRotation + 120 * parseInt(this.selectedNum);
+            this.setDegree(this.animation.currentDeg);
+            return this.deferred.promise;
+        }
+
+        /** random num utility fn */
+        function randomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;;
+        }
+
+    })();
+    </script>
+</body>
+
+</html>
